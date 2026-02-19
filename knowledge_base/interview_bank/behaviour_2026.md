@@ -1,3 +1,11 @@
+---
+title: Behavioural Interview Answers
+category: interview
+tags: [leadership, conflict, teamwork]
+priority: medium
+last_updated: 2026-02
+---
+
 **[Self-introduction/ please tell me about yourself?]{.underline}**
 
 My name is Yiming Shen, you can call me Ryan. Thanks for having me
