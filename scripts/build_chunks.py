@@ -8,66 +8,70 @@ OUTPUT_FILE = "chunks.json"
 
 MIN_CHARS = 100  # min chars in a chunk, prevent too short & meaningless chunks
 
-
 def read_markdown(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         return f.read()
 
-
-# remove YAML frontmatter at the top of md files
+# remove YAML frontmatter
 def remove_frontmatter(text):
     """
-    Remove YAML frontmatter block:
-    ---
-    key: value
-    ---
-    This prevents metadata noise from entering embedding space.
+    Remove YAML frontmatter (--- ... --- at top of file)
+    Prevent metadata pollution in embedding.
     """
-    return re.sub(r"^---.*?---\n", "", text, flags=re.DOTALL)
-    # ^---        : must start at top of file
-    # .*?         : non-greedy match everything
-    # ---\n       : stop at closing ---
-    # DOTALL      : allow '.' to match across multiple lines
+    if text.startswith("---"):
+        parts = text.split("---", 2)
+        if len(parts) >= 3:
+            return parts[2].strip()
+    return text
 
 
 # for resume / project splitting
 def split_by_headers(text):
     '''
-    split markdown text based on headers hierarchy (## , ### only)
-    avoid splitting on single # to prevent tiny chunks like name header
-    keep header attached to its content
+split markdown text based on their headers hierarchy (# , ## , ### )
+keep header to its content
     '''
-    sections = re.split(r"(?=^#{2,3} )", text, flags=re.MULTILINE)
-    # ?=  : lookahead, keep header to its content
-    # ^   : since flags=re.MULTILINE, ^ means beginning of every row not entire string
-    # #{2,3} : only match ## or ### (avoid single #)
-    return [s.strip() for s in sections if s.strip()]
-    # s.strip() removes blankspace at the beginning / end
+    sections = re.split(
+        r"(?=^#{1,3} )",
+        text,
+        flags=re.MULTILINE
+    )  # ?= :lookahead, keep header to its content
+
+    return [
+        s.strip()
+        for s in sections
+        if s.strip() and len(s.strip()) >= MIN_CHARS
+    ]  # remove blank and too short chunks
 
 
 # for interview Q&A
 def split_interview_sections(text):
     '''
-    Split interview bank by ### headers.
-    Each ### section becomes one chunk.
+Split interview bank by ### headers.
+Each ### section becomes one chunk.
+Ensure no mixing with next section.
     '''
-    sections = re.split(r"(?=^### )", text, flags=re.MULTILINE)
-    # after reading interview bank, every Q&A starts with ### title
+    raw_sections = re.split(
+        r"(?=^### )",
+        text,
+        flags=re.MULTILINE
+    )  # every Q&A starts with ###
 
     cleaned_sections = []
 
-    for sec in sections:
+    for sec in raw_sections:
         sec = sec.strip()
 
         if not sec.startswith("###"):
             continue
 
-        # remove trailing separators like:
+        # cut off trailing section markers like:
         # ---
-        # ## Next Section
-        sec = re.split(r"\n---\n## ", sec)[0].strip()
+        # ## next section
+        sec = re.split(r"\n---|\n## ", sec)[0].strip()
 
-        cleaned_sections.append(sec)
+        if len(sec) >= MIN_CHARS:
+            cleaned_sections.append(sec)
 
     return cleaned_sections
 
@@ -95,7 +99,7 @@ def create_chunk(text, source_type, file_name, extra_meta=None):
 def process_file(file_path):
     text = read_markdown(file_path)
 
-    # remove YAML frontmatter before splitting
+    # remove frontmatter first (critical)
     text = remove_frontmatter(text)
 
     file_name = file_path.name
@@ -108,12 +112,8 @@ def process_file(file_path):
         sections = split_interview_sections(text)
 
         for section in sections:
-            header_match = re.match(r"^### (.*)", section)
-            # must start with ### and then (.*) captures question title
-
-            question_title = header_match.group(1) if header_match else "unknown"
-            # group(0): all matched content
-            # group(1): content inside first capture group
+            header_match = re.match(r"^### (.+)", section)
+            question_title = header_match.group(1).strip() if header_match else "unknown"
 
             chunk = create_chunk(
                 section,
@@ -130,11 +130,8 @@ def process_file(file_path):
         sections = split_by_headers(text)
 
         for section in sections:
-            header_match = re.match(r"^(#{2,3}) (.*)", section)
-            # first capture group is header symbols (## or ###)
-            # second capture group is actual section title
-
-            section_title = header_match.group(2) if header_match else "unknown"
+            header_match = re.match(r"^(#{1,3}) (.+)", section)
+            section_title = header_match.group(2).strip() if header_match else "unknown"
 
             chunk = create_chunk(
                 section,
@@ -151,8 +148,8 @@ def process_file(file_path):
         sections = split_by_headers(text)
 
         for section in sections:
-            header_match = re.match(r"^(#{2,3}) (.*)", section)
-            section_title = header_match.group(2) if header_match else "unknown"
+            header_match = re.match(r"^(#{1,3}) (.+)", section)
+            section_title = header_match.group(2).strip() if header_match else "unknown"
 
             chunk = create_chunk(
                 section,
