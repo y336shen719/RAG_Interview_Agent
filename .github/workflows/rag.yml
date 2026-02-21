@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  rag:
+  chunking:
     runs-on: ubuntu-latest
 
     steps:
@@ -18,28 +18,17 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
 
       - name: Build chunks
         run: |
           python scripts/build_chunks.py
-
-      - name: Build embeddings + FAISS index
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          python scripts/build_embeddings.py
 
       - name: Upload chunks artifact
         uses: actions/upload-artifact@v4
         with:
           name: rag-chunks
           path: chunks.json
-
-      - name: Upload vector store artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: rag-vector-store
-          path: |
-            embeddings.npy
-            faiss.index
+          if-no-files-found: error
