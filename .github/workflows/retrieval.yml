@@ -1,0 +1,48 @@
+name: Retrieval Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      query:
+        description: "Enter test query"
+        required: true
+      top_k:
+        description: "Number of retrieved chunks"
+        required: true
+        default: "5"
+
+jobs:
+  retrieval:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      # download artifacts produced by build_rag.yml
+      - name: Download chunks artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rag-chunks
+
+      - name: Download vector store artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rag-vector-store
+
+      - name: Run retrieval test
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python scripts/retrieval_test.py \
+          "${{ github.event.inputs.query }}" \
+          "${{ github.event.inputs.top_k }}"
