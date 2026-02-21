@@ -1,0 +1,610 @@
+[
+  {
+    "content": "## 1. Context\nThis analysis was conducted for the Ontario Ministry of Education, specifically the Policy Analytics and Student Well-Being Division. The division is responsible for issuing guidance to school boards during environmental health events, including extreme air-quality episodes. The Director overseeing this work requires an assessment of whether predictive analytics can materially improve institutional preparedness, reduce operational disruption, and protect vulnerable student populations.\n\nOver the past several decades, regulatory advances and improved monitoring have substantially reduced air pollution in many high-income countries (World Health Organization, 2021). However, since approximately 2015, climate-driven factors—most notably increasingly severe and frequent wildfires—have emerged as major drivers of extreme particulate exposure (Reid et al., 2016). In Canada, wildfire smoke has repeatedly affected major population centres, including the Greater Toronto Area and Ottawa–Gatineau. Children are particularly vulnerable to particulate exposure due to developing respiratory systems and higher inhalation rates (Brook et al., 2010).\n\nCurrent school-level responses are largely reactive. Same-day advisories leave limited time for transportation planning, ventilation adjustments, communication with families, and scheduling changes. The central question addressed in this report is whether next-day PM2.5 concentrations can be forecasted with sufficient reliability to support proactive and equitable decision-making.\n\n---",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "ontario_pm25_forecast.md",
+      "section": "1. Context"
+    }
+  },
+  {
+    "content": "## 2. Executive Summary\nUsing 2020–2024 regional PM2.5, weather, and traffic data, we evaluated next-day forecasting models under strict chronological validation.\n\n- A region-wise LASSO baseline achieved mean out-of-sample **R² ≈ 0.25**.\n- A sequence-based LSTM improved performance to **R² = 0.356**, **MAE = 1.96 µg/m³**, and **RMSE = 2.71 µg/m³**.\n- This represents a **12–19% reduction in error** relative to persistence baselines.\n- The improvement is statistically credible and operationally meaningful.\n- Importantly, gains are strongest during elevated pollution periods—precisely when advance notice is most valuable.\n\n---",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "ontario_pm25_forecast.md",
+      "section": "2. Executive Summary"
+    }
+  },
+  {
+    "content": "### 3.1 Data Sources and Integration\nThis study constructs a region-level panel dataset for Ontario to support next-day (24-hour mean) PM2.5 forecasting. All data are publicly available and obtained from official provincial and federal sources.\n\n- **Air quality:** Hourly PM2.5 measurements from Air Quality Ontario (Ontario Ministry of the Environment, Conservation and Parks), spanning **January 1, 2020 to December 31, 2024**.\n- **Weather:** Meteorological data from Environment and Climate Change Canada (ECCC) stations, including daily measures of temperature, wind speed/direction, gust characteristics, and precipitation.\n\nWeather and air-quality datasets were aligned temporally at the daily level and spatially aggregated to Ontario administrative regions using official station metadata and a Station ID–to–region lookup table. The resulting dataset contains one observation per region-day, yielding **51,830 region-day observations**.\n\nAll region-day PM2.5 observations were retained during integration. If meteorological data were unavailable for a given region-day, weather variables were recorded as missing (rather than dropping the observation) to avoid systematically excluding pollution events.",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "ontario_pm25_forecast.md",
+      "section": "3.1 Data Sources and Integration"
+    }
+  },
+  {
+    "content": "### 3.2 Weather Data Cleaning and Quality Control\nThe Ontario daily weather dataset (2020–2025) was cleaned into an analysis-ready station-day table. Cleaning procedures included:\n\n1. Standardization of column names to lowercase `snake_case`.\n2. Resolution of duplicate column names (retaining the final occurrence).\n3. Normalization of identifiers (e.g., trimming station names; casting climate IDs to string format).\n4. Parsing and reconstructing date components from timestamp fields.\n5. Coercion of meteorological variables to numeric types, with invalid entries set to missing.\n6. Conversion of gust direction from tens-of-degrees to degrees, normalized to [0, 360).\n7. Engineering of quality indicators from metadata flags.\n\nPhysical plausibility bounds were applied to detect outliers, which were set to missing and flagged via dedicated indicator variables. Precipitation trace values were set to 0.0 while retaining trace indicators. Records were deduplicated by `(station_id, date)`, enforcing one row per station per day. A station-level missingness summary was constructed to evaluate completeness and support station screening.",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "ontario_pm25_forecast.md",
+      "section": "3.2 Weather Data Cleaning and Quality Control"
+    }
+  },
+  {
+    "content": "### 3.3 PM2.5 Processing\nHourly PM2.5 observations were aggregated to daily averages at the station level. Days with entirely missing hourly readings were recorded as missing rather than imputed. Station-level daily averages were then aggregated to region-level daily means.\n\nThis aggregation ensures consistency in geographic granularity between meteorological and pollution data while preserving regional heterogeneity.",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "ontario_pm25_forecast.md",
+      "section": "3.3 PM2.5 Processing"
+    }
+  },
+  {
+    "content": "### 3.4 Exploratory Data Analysis\nDaily regional PM2.5 concentrations exhibit strong right-skewness (skewness ≈ 13.85), with rare extreme events exceeding **400 µg/m³**. The mean is **6.63 µg/m³** and the median is **5.43 µg/m³**, indicating that exposure risk is driven by episodic spikes rather than typical conditions.\n\nTemporal diagnostics reveal strong persistence:\n\n- lag-1 autocorrelation ≈ **0.72**\n- current PM2.5 moderately correlated with next-day PM2.5 (**r ≈ 0.57**)\n\nAn Augmented Dickey–Fuller test rejects the unit-root hypothesis (**p < 0.001**), suggesting stationarity in deviations around a mean level.\n\nMeteorological associations are directionally consistent with atmospheric theory: wind speed and precipitation are negatively associated with PM2.5, while temperature shows a positive association. These patterns motivate lagged, rolling, and meteorological predictors.",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "ontario_pm25_forecast.md",
+      "section": "3.4 Exploratory Data Analysis"
+    }
+  },
+  {
+    "content": "### 3.5 Feature Engineering and Leakage Control\nAll predictors were constructed using strictly historical information within each region to prevent data leakage. Features include:\n\n- Lagged PM2.5 values\n- Rolling means and volatility measures\n- Lagged and aggregated meteorological variables\n- Cyclical seasonal encodings (sine/cosine transformations)\n\nObservations with incomplete historical windows were removed to preserve temporal integrity. Train/test splits were performed chronologically.\n\n---",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "ontario_pm25_forecast.md",
+      "section": "3.5 Feature Engineering and Leakage Control"
+    }
+  },
+  {
+    "content": "### 4.1 LASSO Baseline\nA region-wise LASSO regression was implemented as a transparent linear baseline. Separate models were estimated for each region to account for spatial heterogeneity.\n\nPredictors were standardized within a scikit-learn pipeline to ensure scaling parameters were learned exclusively from the training data. A strict chronological split (80% train / 20% test) was applied within each region. The regularization parameter was selected via five-fold cross-validation on the training set. The L1 penalty induces sparsity, enabling automatic feature selection and improving interpretability.\n\nEvaluation metrics on the held-out test set:\n\n- Mean Absolute Error (MAE)\n- Root Mean Squared Error (RMSE)\n- R²\n- Mean Absolute Percentage Error (MAPE)\n- Symmetric MAPE (sMAPE)\n- Pearson correlation",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "ontario_pm25_forecast.md",
+      "section": "4.1 LASSO Baseline"
+    }
+  },
+  {
+    "content": "### 4.2 LSTM Sequence Model\nTo capture nonlinear dynamics and temporal dependence, we implemented an LSTM model using fixed-length **14-day** historical windows. The dataset contains sequences of shape **N × 14 × 18**.\n\nSamples were time-split (80% train / 20% test) using `end_date` to prevent leakage. Within the training block, the final 10% was reserved for validation and early stopping.\n\n**Architecture**\n- 2-layer LSTM encoder (hidden size = 128)\n- Dropout = 0.15\n- MLP regression head\n\n**Training**\n- AdamW optimizer (lr = 1e-3, weight_decay = 1e-4)\n- Batch size = 256\n- Max epochs = 50\n- Gradient clipping = 1.0\n- Early stopping (patience = 8)\n- Huber (SmoothL1) loss\n\nThe target was log-transformed during training and inverted at inference. All metrics are reported in the original µg/m³ scale.\n\n**Baselines**\n1. Persistence (tomorrow = last observed value)\n2. Rolling mean (tomorrow = mean over window)\n\n---",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "ontario_pm25_forecast.md",
+      "section": "4.2 LSTM Sequence Model"
+    }
+  },
+  {
+    "content": "### 5.1 LASSO Performance\nAcross 26 regions, the LASSO baseline achieved:\n\n- Mean test **R² = 0.25** (median ≈ 0.22)\n- Mean **RMSE = 2.9 µg/m³**\n- Mean **MAE = 2.2 µg/m³**\n- Mean Pearson **r = 0.55**\n\nPerformance heterogeneity was substantial: some regions achieved R² > 0.45 while others were below 0.10, reflecting regional differences in pollution dynamics.\n\nThe model selected approximately 30–40 predictors per region on average. Frequently retained variables included lagged PM2.5, wind metrics, precipitation, and seasonal encodings. While interpretable, the linear specification explains only a modest portion of future variability.",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "ontario_pm25_forecast.md",
+      "section": "5.1 LASSO Performance"
+    }
+  },
+  {
+    "content": "### 5.2 LSTM Performance\nThe LSTM substantially outperformed all baselines:\n\n| Model          | MAE  | RMSE | R²    | Pearson r |\n|----------------|------|------|-------|----------:|\n| LSTM           | 1.96 | 2.71 | 0.356 | 0.598     |\n| Persistence    | 2.24 |  —   | 0.137 | —         |\n| Rolling mean   | 2.42 |  —   | 0.090 | —         |\n\nThis corresponds to:\n- ~12–13% MAE reduction vs persistence\n- ~19% MAE reduction vs rolling mean\n\nMAPE values (~50%) are inflated due to small denominators on low-pollution days; MAE, RMSE, and R² provide more stable evaluation.\n\nPermutation importance indicates dominant reliance on recent PM2.5 history, with meaningful secondary contributions from meteorological variables (temperature, precipitation, gust speed/direction) and seasonal proxies. Extending the input window beyond 7 days yielded marginal gains, suggesting predictive information is concentrated in recent history.",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "ontario_pm25_forecast.md",
+      "section": "5.2 LSTM Performance"
+    }
+  },
+  {
+    "content": "### 5.3 Comparative Interpretation\nThe LASSO baseline demonstrates that linear and seasonal structure explains a meaningful share of PM2.5 dynamics. However, the LSTM’s consistent improvement over persistence establishes that nonlinear temporal modeling adds statistically and operationally significant predictive value.\n\nFrom a decision-theoretic perspective, the improvement over persistence supports deployment where next-day preparedness decisions carry asymmetric costs, particularly during high-pollution events.\n\n---",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "ontario_pm25_forecast.md",
+      "section": "5.3 Comparative Interpretation"
+    }
+  },
+  {
+    "content": "## 6. Regional Heterogeneity, Equity, and Seasonal Strategy\nSubstantial heterogeneity exists across Ontario regions. Southern and industrialized regions exhibit persistently higher mean PM2.5 concentrations and greater variability. These regions function as structural “hotspots” where both baseline exposure and extreme-event risk are elevated.\n\nPredictive performance also varies geographically. Regions with relatively stable pollution dynamics tend to exhibit higher R² values, while areas prone to abrupt wildfire-driven spikes display lower predictability. This variation reflects differences in atmospheric transport patterns, urban density, industrial emissions, and proximity to wildfire pathways. Forecast accuracy is therefore not solely a modeling issue but also a function of underlying environmental volatility.\n\nFrom an equity perspective, proactive forecasting should not be deployed uniformly. Regions with systematically higher exposure and volatility warrant prioritized resource allocation (e.g., indoor activity alternatives, portable air filtration where policy permits, and pre-developed communication templates). A differentiated strategy acknowledges that exposure risk is not evenly distributed and supports equitable preparedness planning.\n\nSeasonal patterns reinforce the need for structured planning. Elevated PM2.5 risk is most frequent during summer wildfire season and certain winter inversion periods, though regional seasonal vulnerability differs. A risk-calendar approach enables education authorities to intensify monitoring and preparedness during predictable high-risk windows (e.g., June–September) rather than maintaining continuous high-alert states.\n\nAlthough the LSTM model is nonlinear, its behavior aligns with intuitive atmospheric mechanisms:\n- Low wind speeds and stable atmospheric conditions reduce dispersion, allowing particulates to accumulate.\n- Shifts in wind direction can transport wildfire smoke across large distances.\n- Precipitation reduces airborne particulate concentration through wet deposition.\n- High temperatures during stagnant summer conditions often coincide with elevated pollution episodes.\n\n---",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "ontario_pm25_forecast.md",
+      "section": "6. Regional Heterogeneity, Equity, and Seasonal Strategy"
+    }
+  },
+  {
+    "content": "## 7. Operational Value and Responsible Deployment\nWhile statistical accuracy metrics such as MAE and R² are important, the principal value of forecasting lies in advance notice. A one-day lead time enables schools to schedule indoor programming, adjust physical education and recess plans, prepare ventilation adjustments, and proactively communicate with families. Sensitive student populations (e.g., those with asthma or respiratory conditions) can be notified in advance.\n\nEven modest forecast skill can shift institutional posture from reactive to proactive, reducing both health risk and operational disruption. The value of information is asymmetric: avoiding under-preparedness during high-pollution events carries greater benefit than marginal improvements on routine days.\n\nResponsible deployment requires recognition of system boundaries. Forecast uncertainty increases during abrupt wildfire outbreaks and long-range smoke transport events that may not be fully captured by local meteorological inputs. In such cases, predictions should be interpreted alongside provincial air-quality advisories and other authoritative sources.\n\nRecommendation: incorporate policy rules that flag days with elevated predictive uncertainty for manual review. Transparent communication regarding model limitations enhances institutional trust and mitigates the risk of overreliance on automated outputs. The system should be positioned explicitly as decision support—not a replacement for official environmental alerts.\n\nOverall, the evidence demonstrates that next-day PM2.5 forecasting is statistically credible, operationally meaningful, and equity-relevant. Sequence-based models provide measurable improvement beyond persistence, particularly during elevated pollution periods. With responsible implementation and regionally differentiated deployment, predictive analytics can materially enhance preparedness, reduce health risks, and promote equitable resource allocation during air-quality emergencies.\n\n---",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "ontario_pm25_forecast.md",
+      "section": "7. Operational Value and Responsible Deployment"
+    }
+  },
+  {
+    "content": "## 8. Executive Takeaways\nKey implications for decision-makers:\n\n- **Forecasting adds operational value.** A one-day lead time supports proactive scheduling adjustments, family communications, and preparedness for vulnerable student populations.\n- **Regional differentiation is essential.** Exposure and predictability vary substantially across regions; deployment should prioritize structurally higher-risk areas.\n- **Seasonal strategy improves efficiency.** Preparedness should intensify during predictable high-risk windows (e.g., summer wildfire season) rather than operate in continuous high-alert mode.\n- **Decision support, not automation.** The system should augment official advisories and include safeguards for high-uncertainty days.\n\nIn summary, implementing a regionally differentiated next-day alert framework is justified on statistical, operational, and equity grounds. With responsible governance and transparent communication, predictive analytics can materially improve preparedness and reduce health risks in Ontario’s education system.\n\n---",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "ontario_pm25_forecast.md",
+      "section": "8. Executive Takeaways"
+    }
+  },
+  {
+    "content": "## References\n- Brook, Robert D., Sanjay Rajagopalan, C. Arden Pope, et al. (2010). “Particulate Matter Air Pollution and Cardiovascular Disease.” *Circulation*, 121(21), 2331–2378.\n- Reid, Colleen E., Michael Brauer, Fay H. Johnston, Michael Jerrett, John R. Balmes, and Catherine T. Elliott. (2016). “Critical Review of Health Impacts of Wildfire Smoke Exposure.” *Environmental Health Perspectives*, 124(9), 1334–1343.\n- W",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "ontario_pm25_forecast.md",
+      "section": "References"
+    }
+  },
+  {
+    "content": "## 1. Introduction\nThis project is built around the ongoing Kaggle competition **“Hull Tactical — Market Prediction”**. The challenge asks participants to predict the **next-day return** of the S&P 500 index and convert those predictions into a **trading strategy** that seeks positive excess returns while controlling portfolio risk.\n\nThe main training file `train.csv` contains several decades of daily U.S. equity-market data. Each row corresponds to a trading day identified by a `date_id`, with **hundreds of anonymized features** grouped into families such as:\n\n- Market-dynamics (M)  \n- Macro-economic (E)  \n- Interest-rate (I)  \n- Valuation (P)  \n- Volatility (V)  \n- Sentiment (S)  \n- Momentum (MOM)  \n- Dummy variables (D)\n\nThe prediction target is `forward_returns`, defined as the return from buying the S&P 500 and selling it one day later. The file also includes the contemporaneous **federal funds rate** as a proxy for the **risk-free rate**.",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "Kaggle_S&P_Predication.md",
+      "section": "1. Introduction"
+    }
+  },
+  {
+    "content": "## 2. Evaluation Metric and Competition Setup\nThe competition uses a **custom risk-adjusted performance metric**, implemented in baseline notebooks as an **adjusted-Sharpe-style score** computed from a simulated daily trading strategy (Kaggle “custom metric”).\n\nThe competition runs in two phases:\n1. **Model-training phase** using historical data  \n2. **Forecasting phase** using future, real-time data\n\nAfter submissions close, a forecasting phase begins in which a second set of roughly **180 trading days** of fresh S&P 500 data is collected after the deadline. Final rankings will be based on models’ performance on this out-of-sample period.\n\n**Project constraint:** the live 180-day test window will finish after the CS680 course deadline, so the official private leaderboard will not be available when this project is due.  \n**Our solution:** we reserve the last **180 trading days** of the provided `train.csv` as the project test set, and use all earlier dates exclusively for training.\n\n---",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "Kaggle_S&P_Predication.md",
+      "section": "2. Evaluation Metric and Competition Setup"
+    }
+  },
+  {
+    "content": "### 3.1 Prediction Target and Trading Objective\nThis work focuses on tree-based models for predicting daily S&P 500 **excess returns**. Instead of predicting raw forward returns, we predict the **sign (negative/positive)** of the market forward excess return:\n\n- `market_forward_excess_returns = forward_returns - risk_free_rate`\n\nWe then convert the predicted probability into a **0–2 long exposure** trading strategy.",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "Kaggle_S&P_Predication.md",
+      "section": "3.1 Prediction Target and Trading Objective"
+    }
+  },
+  {
+    "content": "### 3.2 EDA Findings\nKey observations:\n- The target `market_forward_excess_returns` has **mean close to zero** and **standard deviation around ~1% per day**, with **non-normal tails**.\n- Linear correlations between the target and the 90+ input features are all very small (**|ρ| ≤ 0.07**), suggesting that any usable signal is **weak and likely non-linear**.\n\nWe also ran a Hurst R/S analysis:\n- The **cumulative** excess return shows a Hurst exponent of **≈ 1.01**, indicating persistent long-term trend.\n- The **raw** excess returns have **H ≈ 0.54**, close to uncorrelated noise.\n\n**Implication:** a moderately regularized tree model with time-series feature engineering might capture weak non-linear signal while reducing overfitting.",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "Kaggle_S&P_Predication.md",
+      "section": "3.2 EDA Findings"
+    }
+  },
+  {
+    "content": "### 3.3 Model Families and Metrics\nWe use **LightGBM** and **XGBoost** because both are gradient-boosted trees with strong regularization controls (e.g., L1/L2 penalties). We also try two ensemble approaches: **blending** and **stacking**.\n\nWe select models using:\n- **Primary metric:** log loss (aligned with the training objective: binary logistic loss)\n- **Secondary diagnostic:** AUC\n- **Ultimate objective:** adjusted Sharpe ratio (competition metric)\n\n---",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "Kaggle_S&P_Predication.md",
+      "section": "3.3 Model Families and Metrics"
+    }
+  },
+  {
+    "content": "### 4.1 Pipeline Design\nAll feature engineering is implemented inside a **scikit-learn Pipeline** to ensure transformations are applied consistently within each time-series cross-validation fold and in the final training.",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "Kaggle_S&P_Predication.md",
+      "section": "4.1 Pipeline Design"
+    }
+  },
+  {
+    "content": "### 4.2 Preprocessing and Time-Series Features\nSteps:\n1. **Drop sparse columns:** remove features with >50% missing values to improve stability and avoid heavy imputation on very sparse signals.\n2. **Lag and rolling features** based on `market_forward_excess_returns`:\n   - Lags (1–5 days) to capture short-term momentum or mean-reversion (roughly one trading week)\n   - Rolling means and standard deviations over 5, 21, and 63 days (weekly, monthly, quarterly) to summarize trend and volatility regimes\n3. **Fill remaining missing values** with a constant 0 after feature creation.",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "Kaggle_S&P_Predication.md",
+      "section": "4.2 Preprocessing and Time-Series Features"
+    }
+  },
+  {
+    "content": "### 4.3 Wavelet Decomposition Features (with Leakage-Aware Design)\nWe apply wavelet decomposition to the target and decompose it into 3 components:\n- **Low-frequency** sub-band: long-term trend  \n- **Mid-frequency** sub-band: medium-term cycles  \n- **High-frequency** sub-band: short-term noise  \n\nFrom these components we derive multi-scale features such as:\n- Variances and energy shares (trend-driven vs noise-driven activity)\n- Rolling slopes and rolling means (medium-term direction and local reference levels)\n\n**Leakage control:** we avoid standard DWT/MODWT setups that rely on symmetric padding and centered convolutions. We implement **causal wavelet filtering**, and compute features using **backward-looking rolling windows** only.\n\n---",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "Kaggle_S&P_Predication.md",
+      "section": "4.3 Wavelet Decomposition Features (with Leakage-Aware Design)"
+    }
+  },
+  {
+    "content": "### 5.1 Base Models and Hyperparameter Tuning\nWe consider two probabilistic classifiers: **LightGBM** and **XGBoost**, trained on the same feature set.\n\nHyperparameters are tuned via:\n- `RandomizedSearchCV`\n- `TimeSeriesSplit` (5 folds)\n- scoring metric: negative log loss\n\nSearch spaces prioritize:\n- relatively shallow trees\n- moderate learning rates\n- non-zero L1/L2 regularization",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "Kaggle_S&P_Predication.md",
+      "section": "5.1 Base Models and Hyperparameter Tuning"
+    }
+  },
+  {
+    "content": "### 5.2 OOF Predictions for Blending and Stacking\nAfter selecting hyperparameters, we compute **out-of-fold (OOF) predictions** using `TimeSeriesSplit` again. Each fold trains on past data and predicts the next validation block; concatenated predictions yield OOF probability vectors:\n\n- \\( p_{LGB} \\)\n- \\( p_{XGB} \\)\n\nEnsemble methods:\n- **Blending:** grid search weights \\( w \\in \\{0.0, 0.1, \\dots, 1.0\\} \\) for  \n  \\( p_{blend} = w \\cdot p_{LGB} + (1-w)\\cdot p_{XGB} \\)  \n  choose weight by lowest OOF log loss.\n- **Stacking:** use \\([p_{LGB}, p_{XGB}]\\) as 2D meta-features and train a logistic regression meta-model.  \n  Tune regularization strength \\( C \\) by OOF log loss using a second-level time-series split.\n\n---",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "Kaggle_S&P_Predication.md",
+      "section": "5.2 OOF Predictions for Blending and Stacking"
+    }
+  },
+  {
+    "content": "## 6. Trading Strategy: Mapping Probability to Position\nOur final goal is to convert predicted probabilities into a **0–2 exposure** trading strategy and maximize adjusted Sharpe.\n\nWe define a position function that maps predicted probability \\(p\\) into daily leverage:\n\n- exposure increases only when \\(p\\) exceeds a threshold (“center”)\n- exposure is clipped between a minimum floor and a maximum leverage\n\nThe function has four tunable parameters:\n- **floor:** minimum exposure  \n- **center:** probability threshold above which exposure increases  \n- **slope:** aggressiveness of exposure growth  \n- **max_pos:** maximum allowed leverage  \n\nFor each of the four model variants (**LGB**, **XGB**, **blend**, **stack**), we tune the position parameters on the OOF region by grid search, maximizing OOF adjusted Sharpe.\n\n---",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "Kaggle_S&P_Predication.md",
+      "section": "6. Trading Strategy: Mapping Probability to Position"
+    }
+  },
+  {
+    "content": "### 7.1 Summary Metrics\nUsing the tuned models and position functions, we refit each pipeline on the full training period and evaluate on the 180-day test set:\n\n| Model | Test log loss | AUC | Adjusted Sharpe |\n|------|---------------:|----:|----------------:|\n| LGB + position | 0.6895 | 0.5591 | -0.24 |\n| XGB + position | 0.6896 | 0.5440 | 0.30 |\n| Blend (best w = 0) + position | 0.6896 | 0.5440 | 0.30 |\n| Stack (best C = 0.1) + position | 0.6909 | 0.5584 | 0.22 |\n\nNotes:\n- All models achieve test log loss only slightly better than the random-guess baseline (~0.693).\n- AUC lies in a narrow range (0.54–0.56), indicating that daily excess returns are extremely hard to predict and any edge is weak.\n- After mapping probabilities into positions, **XGBoost + position** is best among the four, with modestly positive adjusted Sharpe.",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "Kaggle_S&P_Predication.md",
+      "section": "7.1 Summary Metrics"
+    }
+  },
+  {
+    "content": "### 7.2 Strategy Behavior (Qualitative)\nFor the best strategy (**XGB + position**), we visualize performance on the 180-day test period using:\n1. **Cumulative return comparison (market vs strategy):**  \n   The market increases from ~1.00 to ~1.03, while the strategy ends around ~1.035. During market drawdowns, the strategy equity curve appears smoother and avoids the deepest losses.\n2. **Monthly return bar chart:**  \n   The strategy has lower return volatility than the market and a higher fraction of small positive days—suggesting a “wins small but often” profile while avoiding large drawdowns.\n\n---",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "Kaggle_S&P_Predication.md",
+      "section": "7.2 Strategy Behavior (Qualitative)"
+    }
+  },
+  {
+    "content": "## 8. Conclusion and Limitations\nOur XGB + position strategy delivers **conservative but positive** risk-adjusted performance, serving as a reasonably rigorous quant modeling pipeline. However, there are limitations:\n\n- **Optimistic bias risk:** hyperparameters, ensemble parameters, and position parameters are all tuned using time-series CV and OOF predictions on the training period. Repeatedly selecting best variants on the same OOF region can introduce mild optimistic bias.\n- **Potential improvement:** a rolling-window **nested** time-series CV could provide a more robust estimate of performance, but would substantially increase compute and implementation complexity.\n- **Fundamental predictability constraint:** raw daily excess returns behave close to noise (consistent with Hurst ≈ 0.54). Therefore, we do not expect dramatically better performance simply by switching model families.\n- **Future direction:** a purely rule-based strategy (no learnable parameters) might outperform our model-based pipeline, but exploring this is beyond the scope of CS680.",
+    "metadata": {
+      "source_type": "project",
+      "file_name": "Kaggle_S&P_Predication.md",
+      "section": "8. Conclusion and Limitations"
+    }
+  },
+  {
+    "content": "# Yiming (Ryan) Shen\n\nEmail: y336shen@uwaterloo.ca  \nLocation: Toronto, ON, Canada  \nGitHub | LinkedIn\n\n---",
+    "metadata": {
+      "source_type": "resume",
+      "file_name": "Yiming_Shen_Resume.md",
+      "section": "Yiming (Ryan) Shen"
+    }
+  },
+  {
+    "content": "## 1. Summary\n\nMaster’s student in Data Science and Artificial Intelligence at the University of Waterloo with strong quantitative background in statistics and machine learning. Experienced in building end-to-end data pipelines, time-series models, and business-facing analytics dashboards.\n\nTechnical strengths include Python, SQL, R, Spark, and BI tools (Power BI, Tableau). Strong in analytical thinking, stakeholder communication, and translating complex data into actionable insights.\n\n---",
+    "metadata": {
+      "source_type": "resume",
+      "file_name": "Yiming_Shen_Resume.md",
+      "section": "1. Summary"
+    }
+  },
+  {
+    "content": "### Master of Data Science and Artificial Intelligence (MDSAI), Co-op  \nUniversity of Waterloo — Waterloo, ON  \nSept 2025 – Dec 2026  \nMajor GPA: 87% (3.9)\n\nRelevant Coursework:\n- Neural Networks\n- Large Language Models (LLMs)\n- Natural Language Processing\n- Optimization for Data Science\n- Data Engineering\n- Exploratory Data Analysis\n\n---",
+    "metadata": {
+      "source_type": "resume",
+      "file_name": "Yiming_Shen_Resume.md",
+      "section": "Master of Data Science and Artificial Intelligence (MDSAI), Co-op"
+    }
+  },
+  {
+    "content": "### Bachelor of Mathematics (Honours Statistics), Minor in Computing, Co-op  \nUniversity of Waterloo — Waterloo, ON  \nSept 2020 – Apr 2025  \nMajor GPA: 90.7% (4.0)  \nCumulative GPA: 90.2% (4.0)\n\nAwards:\n- Excellent Academic Standing (All Terms 2020–2025)\n- President’s Scholarship\n\nRelevant Coursework:\n- Generalized Linear Models\n- Stochastic Processes\n- Forecasting\n- Experimental Design\n- Data Structures\n\n---",
+    "metadata": {
+      "source_type": "resume",
+      "file_name": "Yiming_Shen_Resume.md",
+      "section": "Bachelor of Mathematics (Honours Statistics), Minor in Computing, Co-op"
+    }
+  },
+  {
+    "content": "### Kaggle – S&P 500 Market Prediction\n\nDeveloped a time-series ML pipeline to forecast next-day S&P 500 returns and optimize trading strategy performance.\n\n**EDA**\n- Analyzed 100+ financial indicators\n- Conducted correlation and missing-value profiling\n- Applied Hurst exponent analysis to evaluate market persistence\n\n**Feature Engineering**\n- Created lag and rolling-window features\n- Implemented leakage-aware wavelet decomposition\n- Preserved strict temporal causality\n\n**Modeling**\n- Built reproducible scikit-learn pipeline\n- Applied walk-forward validation\n- Trained LightGBM and XGBoost\n- Implemented OOF blending and stacking\n\n**Results**\n- Achieved ~0.40 adjusted Sharpe ratio\n- Demonstrated stable behavior during drawdowns\n- Reduced optimistic bias via proper validation\n\n---",
+    "metadata": {
+      "source_type": "resume",
+      "file_name": "Yiming_Shen_Resume.md",
+      "section": "Kaggle – S&P 500 Market Prediction"
+    }
+  },
+  {
+    "content": "### Analytics Co-op – CIBC (8 Months)  \nToronto, ON | Jan 2024 – Aug 2024\n\nBuilt enterprise analytics dashboards for printer network monitoring.\n\n- Developed 3 Power BI dashboards (22 visuals)\n- Created SQL views and data transformation logic\n- Implemented on-premises data gateway\n- Optimized incremental refresh and query folding\n- Collaborated with 20+ engineers\n- Received \"Outstanding\" rating\n\n---",
+    "metadata": {
+      "source_type": "resume",
+      "file_name": "Yiming_Shen_Resume.md",
+      "section": "Analytics Co-op – CIBC (8 Months)"
+    }
+  },
+  {
+    "content": "### Data Analyst – Horizn Studios  \nToronto, ON | May 2023 – Sept 2023\n\n- Generated 18 weekly automated reports (Excel VBA)\n- Built Tableau dashboards\n- Conducted correlation analysis in Python\n- Identified usage drivers and delivered business recommendations\n\n---",
+    "metadata": {
+      "source_type": "resume",
+      "file_name": "Yiming_Shen_Resume.md",
+      "section": "Data Analyst – Horizn Studios"
+    }
+  },
+  {
+    "content": "### Data Analyst – York Region  \nNewmarket, ON | Sept 2022 – Dec 2022\n\n- Processed 1M+ transportation records using T-SQL\n- Built interactive Power BI dashboards\n- Designed ETL workflow\n- Achieved 500+ weekly dashboard views\n- Supported traffic planning decisions\n\n---",
+    "metadata": {
+      "source_type": "resume",
+      "file_name": "Yiming_Shen_Resume.md",
+      "section": "Data Analyst – York Region"
+    }
+  },
+  {
+    "content": "### Data Engineering & BI\n- Spark\n- AWS (learning)\n- Power BI\n- Tableau\n- Power Automate\n- SharePoint\n- Excel",
+    "metadata": {
+      "source_type": "resume",
+      "file_name": "Yiming_Shen_Resume.md",
+      "section": "Data Engineering & BI"
+    }
+  },
+  {
+    "content": "### Tell me about yourself\n\nMy name is Yiming Shen, you can call me Ryan. I’m currently pursuing a Master’s in Data Science and Artificial Intelligence at the University of Waterloo. I also completed my Bachelor’s in Statistics and Computing at Waterloo with excellent academic standing.\n\nThrough my academic training, I’ve built a strong foundation in machine learning, statistics, and data-driven problem solving. Beyond academics, I’ve completed five co-op terms across government, banking, fintech, and technology organizations, where I worked closely with stakeholders to turn messy data into actionable insights.\n\nTechnically, I’m comfortable with Python and R for modeling and analysis, and I have hands-on experience building end-to-end pipelines using SQL, Power BI, and Tableau. More recently, I’ve been developing more production-oriented skills such as Spark and AWS to expand into scalable ML systems.\n\nPersonally, I’m very passionate about extracting patterns from complex data and building solutions that create real impact.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "behaviour_2026.md",
+      "question": "Tell me about yourself"
+    }
+  },
+  {
+    "content": "### CIBC – Data Pipeline Optimization\n\n**Situation:**  \nDuring my 8-month co-op at CIBC, I worked with the End Point Print and Digital Output team. They manage enterprise printer networks across Canada. Data was stored in an internal SQL Server instance, and my task was to build dashboards to monitor performance and usage.\n\n**Task:**  \nBuild an end-to-end data pipeline and ensure dashboards refresh efficiently as data volume grows.\n\n**Action:**  \n- Built SQL views for aggregation and filtering  \n- Deployed On-Premises Data Gateway  \n- Designed Power BI dashboards with scheduled refresh  \n\nLater, I faced performance issues caused by increasing data size. Even after enabling incremental refresh, performance was unstable.\n\nUsing a diagnostic mindset, I:\n- Broke the problem into SQL layer, gateway layer, and BI layer  \n- Discovered that query folding was failing  \n- Reordered transformation steps to ensure filtering was pushed down to SQL  \n- Simplified Power Query steps  \n\n**Result:**  \nRefresh became fast and stable. The dashboards were adopted by stakeholders, and I received an “Outstanding” performance rating.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "behaviour_2026.md",
+      "question": "CIBC – Data Pipeline Optimization"
+    }
+  },
+  {
+    "content": "### Kaggle – Fixing Data Leakage in Time Series\n\n**Situation:**  \nIn a Kaggle competition on S&P 500 forecasting, I built a time-series ML pipeline.\n\n**Task:**  \nDevelop a strategy within 2 months and maximize adjusted Sharpe ratio.\n\n**Action:**  \nDuring validation, I noticed unusually high performance. That raised a red flag for potential data leakage.\n\nUsing controlled experiments:\n- Removed wavelet decomposition features  \n- Observed validation performance dropped to realistic levels  \n- Investigated wavelet implementation  \n- Discovered symmetric windowing introduced look-ahead bias  \n- Replaced with strictly one-sided causal filtering  \n\n**Result:**  \nValidation became more conservative but reliable. I learned the importance of leakage-aware modeling in time series.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "behaviour_2026.md",
+      "question": "Kaggle – Fixing Data Leakage in Time Series"
+    }
+  },
+  {
+    "content": "### Communication\n\n- Identify audience (technical vs leadership)\n- Align explanation with business objectives\n- Use simple visuals to communicate impact\n- Continuously check for understanding\n\nExample:  \nWhen explaining Sharpe Ratio performance in Kaggle, I used a simple cumulative return line chart to visually show how our strategy behaved during market volatility.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "behaviour_2026.md",
+      "question": "Communication"
+    }
+  },
+  {
+    "content": "### Conflict Handling\n\n**Example – Feature Engineering Disagreement**\n\n**Situation:**  \nIn the Kaggle project, teammates disagreed on adding new features vs using PCA for dimensionality reduction.\n\n**Action:**  \n- Scheduled structured 30-minute discussion  \n- Let both sides present reasoning  \n- Designed controlled experiment keeping everything else fixed  \n\n**Result:**  \nFound adding features was more stable across folds. Reached consensus and moved forward.\n\nKey principles:\n- Understand root cause of disagreement  \n- Use data or experiments to resolve conflict  \n- Avoid ego-based argument",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "behaviour_2026.md",
+      "question": "Conflict Handling"
+    }
+  },
+  {
+    "content": "### Time Management\n\n- Break large tasks into milestones  \n- Set mini-deadlines  \n- Prioritize client-facing deliverables  \n- Time-box lower priority tasks  \n\nExample:  \nAt Horizn, I handled 3 concurrent tasks. I clarified priorities with my manager and allocated time accordingly. Delivered all tasks on time.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "behaviour_2026.md",
+      "question": "Time Management"
+    }
+  },
+  {
+    "content": "### Stress Handling\n\nWhen deadlines cluster together:\n- Break tasks into small milestones  \n- Reduce uncertainty through planning  \n- Maintain a clean workspace  \n- Use hobbies (badminton, swimming) to decompress  \n\nFor team stress:\n- Increase transparency  \n- Provide short progress updates  \n- Reduce uncertainty within the team",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "behaviour_2026.md",
+      "question": "Stress Handling"
+    }
+  },
+  {
+    "content": "### Problem Solving\n\nFramework:\n1. Break problem into components  \n2. Isolate variables  \n3. Run small controlled experiments  \n4. Close knowledge gaps via learning  \n\nExample:  \nAt CIBC, diagnosed refresh issue by isolating BI, gateway, and SQL layers.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "behaviour_2026.md",
+      "question": "Problem Solving"
+    }
+  },
+  {
+    "content": "### Adaptability\n\nExample – Philips Lighting:\n\n**Situation:**  \nWorked as procurement intern without supply chain background.\n\n**Action:**  \n- Proactively asked colleagues  \n- Took notes  \n- Self-learned business terms  \n\n**Result:**  \nFully independent within one month.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "behaviour_2026.md",
+      "question": "Adaptability"
+    }
+  },
+  {
+    "content": "### Tell me about a failure\n\nIn a STAT course, I spent days preparing but didn’t get expected results. I reflected and realized learning curves are not linear. I focused on improving strategy instead of doubting effort.\n\nLesson:\n- Reflect objectively  \n- Avoid emotional spiral  \n- Improve system, not just effort",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "behaviour_2026.md",
+      "question": "Tell me about a failure"
+    }
+  },
+  {
+    "content": "### How do you handle criticism?\n\nWhen my manager wasn’t satisfied with my first dashboard version:\n- Collected feedback individually  \n- Identified conflicting stakeholder requirements  \n- Created shared documentation  \n- Facilitated short alignment discussion  \n\nResult:  \nClear requirements, improved version accepted.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "behaviour_2026.md",
+      "question": "How do you handle criticism?"
+    }
+  },
+  {
+    "content": "### What is your weakness?\n\nLeadership experience — currently improving by volunteering for presentation and coordination roles.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "behaviour_2026.md",
+      "question": "What is your weakness?"
+    }
+  },
+  {
+    "content": "### Where do you see yourself in 5 years?\n\nShort-term: Complete Master’s and deepen ML system skills.  \nMid-term: Become a strong data scientist and transition toward MLE.  \nLong-term: Work on impactful AI systems where curiosity drives continuous learning.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "behaviour_2026.md",
+      "question": "Where do you see yourself in 5 years?"
+    }
+  },
+  {
+    "content": "### How do you handle data that is too large for memory?\n\nThere are multiple strategies depending on scale:\n\n1. Reduce precision if acceptable (e.g., float64 → float32)\n2. Chunk processing: process data in batches and aggregate results\n3. Push down computation into SQL/data warehouse\n4. Use distributed frameworks like Spark\n5. Sampling for exploratory analysis\n\nKey principle: move computation to where the data lives.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "How do you handle data that is too large for memory?"
+    }
+  },
+  {
+    "content": "### What is schema?\n\nA schema is the blueprint of a database.  \nIt defines:\n\n- Tables  \n- Columns and data types  \n- Primary and foreign keys  \n- Constraints  \n\nIt ensures structure and consistency.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "What is schema?"
+    }
+  },
+  {
+    "content": "### What is data lineage?\n\nData lineage tracks where data originates from and how it is transformed across systems.\n\nIt improves transparency, debugging, and governance.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "What is data lineage?"
+    }
+  },
+  {
+    "content": "### What is metadata?\n\nMetadata is data about data — it describes structure, meaning, and usage of data.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "What is metadata?"
+    }
+  },
+  {
+    "content": "### What is primary key and foreign key?\n\n- Primary key uniquely identifies each row in a table.\n- Foreign key references a primary key in another table.\n\nThey enforce relational integrity.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "What is primary key and foreign key?"
+    }
+  },
+  {
+    "content": "### COUNT(*) vs COUNT(column)\n\n- COUNT(*) counts all rows.\n- COUNT(column) counts non-null values.\n- COUNT(*) - COUNT(column) gives number of nulls.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "COUNT(*) vs COUNT(column)"
+    }
+  },
+  {
+    "content": "### How do you conduct data cleaning?\n\nMy process:\n\n1. Understand the schema and data dictionary  \n2. Profile missing rate, duplicates, outliers  \n3. Handle issues:\n   - Missing → drop, impute, indicator  \n   - Duplicates → define and remove  \n   - Outliers → detect and decide error vs valid extreme  \n4. Validate results  \n5. Make cleaning reproducible via pipeline",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "How do you conduct data cleaning?"
+    }
+  },
+  {
+    "content": "### How do you handle missing values?\n\nSteps:\n\n1. Profile missing pattern  \n2. Identify mechanism (MCAR, MAR, MNAR)  \n3. Drop if missing rate too high  \n4. Impute:\n   - Numerical → mean/median/rolling mean  \n   - Categorical → mode/unknown  \n5. Add missing indicator when informative",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "How do you handle missing values?"
+    }
+  },
+  {
+    "content": "### What is p-value?\n\nAssuming the null hypothesis is true, the p-value is the probability of observing results as extreme or more extreme than what we observed.\n\nIf p < 0.05, we reject the null hypothesis.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "What is p-value?"
+    }
+  },
+  {
+    "content": "### What is Central Limit Theorem?\n\nFor i.i.d. samples with finite variance, as sample size increases, the sampling distribution of the mean approaches normal distribution — even if original data is not normal.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "What is Central Limit Theorem?"
+    }
+  },
+  {
+    "content": "### What is a confidence interval?\n\nIf we repeatedly sample and compute 95% CI each time, about 95% of intervals would contain the true parameter.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "What is a confidence interval?"
+    }
+  },
+  {
+    "content": "### Type I vs Type II Error\n\n- Type I: False positive (reject true null)\n- Type II: False negative (fail to reject false null)",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "Type I vs Type II Error"
+    }
+  },
+  {
+    "content": "### Correlation vs Causation\n\n- Correlation: variables move together\n- Causation: changing one variable directly changes another\n\nCausation requires controlled experiment.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "Correlation vs Causation"
+    }
+  },
+  {
+    "content": "### Walk me through a modeling project\n\nI follow PPDAC:\n\n1. Problem → define business goal & metrics  \n2. Plan → experimental design  \n3. Data → cleaning, validation  \n4. Analysis → EDA + modeling  \n5. Conclusion → interpretation + actionable plan",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "Walk me through a modeling project"
+    }
+  },
+  {
+    "content": "### What is bias-variance tradeoff?\n\n- High bias → underfitting\n- High variance → overfitting\n\nGoal: balance both to generalize well.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "What is bias-variance tradeoff?"
+    }
+  },
+  {
+    "content": "### What is underfitting vs overfitting?\n\n- Underfitting: model too simple\n- Overfitting: model too complex and sensitive to training data",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "What is underfitting vs overfitting?"
+    }
+  },
+  {
+    "content": "### What is collinearity?\n\nHighly correlated predictors in regression cause unstable coefficients.\n\nSolution:\n- Drop one feature\n- Use VIF\n- Regularization",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "What is collinearity?"
+    }
+  },
+  {
+    "content": "### What is decision tree vs random forest?\n\n- Decision tree: single tree model\n- Random forest: ensemble of trees using bagging\n\nRandom forest reduces variance.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "What is decision tree vs random forest?"
+    }
+  },
+  {
+    "content": "### What is A/B testing?\n\nRandomly split users into control and treatment groups to measure causal impact.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "What is A/B testing?"
+    }
+  },
+  {
+    "content": "### What is funnel analysis?\n\nFunnel analysis tracks user progression through steps toward a goal and identifies drop-off points.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "What is funnel analysis?"
+    }
+  },
+  {
+    "content": "### How do you validate analysis accuracy?\n\n- Sanity check  \n- Sensitivity analysis  \n- Peer review  \n- Cross-method validation",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "How do you validate analysis accuracy?"
+    }
+  },
+  {
+    "content": "### What is data shift vs concept drift?\n\n- Data shift: input distribution changes  \n- Concept drift: relationship between input and output changes  \n\nSolutions:\n- Monitoring\n- Retraining\n- Adaptive models",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "What is data shift vs concept drift?"
+    }
+  },
+  {
+    "content": "### What is incremental learning?\n\nContinuously updating model with new data without full retraining.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "What is incremental learning?"
+    }
+  },
+  {
+    "content": "### What is catastrophic forgetting?\n\nWhen a model forgets previously learned information after learning new data.",
+    "metadata": {
+      "source_type": "interview",
+      "file_name": "technical_2026.md",
+      "question": "What is catastrophic forgetting?"
+    }
+  }
+]
