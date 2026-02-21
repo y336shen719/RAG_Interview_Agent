@@ -8,8 +8,8 @@ from openai import OpenAI
 # ----------------------------
 # Configuration
 # ----------------------------
-CHUNK_FILE = "chunks.json"
-INDEX_FILE = "faiss.index"
+CHUNK_FILE = "vector_store/chunks.json"
+INDEX_FILE = "vector_store/faiss.index"
 MODEL = "text-embedding-3-small"
 
 # ----------------------------
@@ -62,9 +62,10 @@ def search(query, top_k, index, chunks):
     results = []
     for score, idx in zip(scores[0], indices[0]):
         results.append({
+            "rank": len(results) + 1,
             "score": float(score),
             "metadata": chunks[idx]["metadata"],
-            "content": chunks[idx]["content"][:500]
+            "preview": chunks[idx]["content"][:500]
         })
 
     return results
@@ -76,12 +77,12 @@ def main():
 
     if len(sys.argv) < 3:
         print("Usage: python retrieval_test.py 'your query' top_k")
-        return
+        sys.exit(1)
 
     query = sys.argv[1]
     top_k = int(sys.argv[2])
 
-    print("Loading chunks and index...")
+    print("Loading vector store...")
     chunks = load_chunks()
     index = load_index()
 
@@ -91,15 +92,15 @@ def main():
     results = search(query, top_k, index, chunks)
 
     print("\nResults:")
-    print("=" * 70)
+    print("=" * 80)
 
-    for i, r in enumerate(results, 1):
-        print(f"\nRank {i}")
+    for r in results:
+        print(f"\nRank {r['rank']}")
         print(f"Score: {r['score']:.4f}")
         print("Metadata:", r["metadata"])
         print("Preview:")
-        print(r["content"])
-        print("-" * 70)
+        print(r["preview"])
+        print("-" * 80)
 
 
 if __name__ == "__main__":
