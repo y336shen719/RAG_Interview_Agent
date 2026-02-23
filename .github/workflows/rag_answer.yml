@@ -1,4 +1,4 @@
-name: RAG Answer Generation (dev)
+name: RAG Answer Generation (test)
 
 on:
   workflow_dispatch:
