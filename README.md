@@ -8,7 +8,7 @@ pipeline designed to answer questions about:
 
 ## The deployed demo is available at:
 
-## https://ryan-shen-rag-based-interview-assistant.streamlit.app/
+### https://ryan-shen-rag-based-interview-assistant.streamlit.app/
 
 For security and controlled access, the application is password-protected.
 
