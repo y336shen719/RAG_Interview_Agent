@@ -23,8 +23,8 @@ pipeline designed to answer questions about:
 
 4. FAISS Vector Search
 
--   FLATIP
 -   FLAT as index method
+
 -   IP (Inner Product) as similarity search method
 
 6. Two-Stage Retrieval
