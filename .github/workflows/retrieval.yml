@@ -1,4 +1,4 @@
-name: Retrieval Strategy (test)
+name: Retrieval Strategy (dev)
 
 on:
   workflow_dispatch:
