@@ -158,6 +158,7 @@ def generate_answer(query: str, context: str, client):
     "respond in first-person by explaining that this is an area I am actively looking to develop "
     "and describe how I plan to strengthen this knowledge or skill in the future. "
     "Maintain a confident, structured, and professional tone."
+    "Do not mention the word "context" or "knowledge base".
 )
 
     user_prompt = f"""
