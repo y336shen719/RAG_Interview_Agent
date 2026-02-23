@@ -44,7 +44,8 @@ pipeline designed to answer questions about:
 
 6. Answer Generation by LLM
 
-7. Other
+
+8. Others
 
 -  Knowledge Base Construction
 
