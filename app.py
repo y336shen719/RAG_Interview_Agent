@@ -16,7 +16,7 @@ st.markdown(
 Hi, my name is **Yiming (Ryan) Shen**.  
 I am currently pursuing a **Master’s degree in Data Science and Artificial Intelligence** at the **University of Waterloo**.
 
-Feel free to ask questions about my background, technical projects, or work experience.
+Feel free to ask questions about my background, technical projects, behaviour questions or work experience.
 """
 )
 
