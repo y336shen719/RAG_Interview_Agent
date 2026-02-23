@@ -4,36 +4,34 @@ import numpy as np
 import faiss
 from openai import OpenAI
 from tqdm import tqdm
+from pathlib import Path
 
-CHUNK_FILE = "chunks.json"
-EMBEDDING_OUTPUT = "embeddings.npy"
-INDEX_OUTPUT = "faiss.index"
+# Project root detection
+# Use file location to ensure stable path resolution
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+CHUNK_FILE = PROJECT_ROOT / "chunks.json"
+EMBEDDING_OUTPUT = PROJECT_ROOT / "embeddings.npy"
+INDEX_OUTPUT = PROJECT_ROOT / "faiss.index"
 
 MODEL = "text-embedding-3-small"
 BATCH_SIZE = 32
 
-# ----------------------------
 # Initialize OpenAI client
-# ----------------------------
-api_key = os.getenv("OPENAI_API_KEY")
-if not api_key:
-    raise ValueError("OPENAI_API_KEY not set in environment.")
+def get_client():
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY not set in environment.")
+    return OpenAI(api_key=api_key)
 
-client = OpenAI(api_key=api_key)
-
-
-# ----------------------------
 # Load chunks
-# ----------------------------
 def load_chunks():
     with open(CHUNK_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-# ----------------------------
-# Generate embeddings (batched)
-# ----------------------------
-def generate_embeddings(chunks):
+# Generate embeddings
+def generate_embeddings(chunks, client):
     texts = [chunk["content"] for chunk in chunks]
     vectors = []
 
@@ -55,10 +53,7 @@ def generate_embeddings(chunks):
 
     return vectors
 
-
-# ----------------------------
 # Build FAISS index (cosine similarity)
-# ----------------------------
 def build_faiss_index(vectors):
     dim = vectors.shape[1]
 
@@ -68,10 +63,7 @@ def build_faiss_index(vectors):
 
     return index
 
-
-# ----------------------------
 # Main pipeline
-# ----------------------------
 def main():
     print("Loading chunks...")
     chunks = load_chunks()
@@ -80,8 +72,10 @@ def main():
         print("No chunks found.")
         return
 
+    client = get_client()
+
     print("Generating embeddings...")
-    vectors = generate_embeddings(chunks)
+    vectors = generate_embeddings(chunks, client)
 
     print("Saving embeddings...")
     np.save(EMBEDDING_OUTPUT, vectors)
