@@ -5,11 +5,12 @@ from openai import OpenAI
 
 MODEL = "text-embedding-3-small"
 
-api_key = os.getenv("OPENAI_API_KEY")
-if not api_key:
-    raise ValueError("OPENAI_API_KEY not set.")
-
-client = OpenAI(api_key=api_key)
+# Lazy OpenAI client
+def get_client():
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY not set.")
+    return OpenAI(api_key=api_key)
 
 # Rule-based routing
 def rule_based_router(query: str):
@@ -47,8 +48,19 @@ def rule_based_router(query: str):
 
     return None, 0.0
 
-# Semantic routing fallback
+# Semantic Routing (with caching)
+CATEGORY_DESCRIPTIONS = {
+    "interview": "behavioral interview questions about teamwork, conflict, leadership, failure, communication",
+    "project": "technical machine learning project details, modeling, feature engineering, evaluation, forecasting, time series",
+    "resume": "education background, work experience, skills, tools, programming languages, internships"
+}
+
+# Global cache
+_category_vectors_cache = None
+
 def embed_text(text: str) -> np.ndarray:
+    client = get_client()
+
     response = client.embeddings.create(
         model=MODEL,
         input=text
@@ -57,22 +69,36 @@ def embed_text(text: str) -> np.ndarray:
     faiss.normalize_L2(vec)
     return vec
 
-CATEGORY_DESCRIPTIONS = {
-    "interview": "behavioral interview questions about teamwork, conflict, leadership, failure, communication",
-    "project": "technical machine learning project details, modeling, feature engineering, evaluation, forecasting, time series",
-    "resume": "education background, work experience, skills, tools, programming languages, internships"
-}
 
-# Precompute category embeddings once per process run
-CATEGORY_VECTORS = {k: embed_text(v) for k, v in CATEGORY_DESCRIPTIONS.items()}
+def get_category_vectors():
+    global _category_vectors_cache
+
+    if _category_vectors_cache is None:
+        client = get_client()
+
+        cache = {}
+        for category, description in CATEGORY_DESCRIPTIONS.items():
+            response = client.embeddings.create(
+                model=MODEL,
+                input=description
+            )
+            vec = np.array(response.data[0].embedding, dtype="float32").reshape(1, -1)
+            faiss.normalize_L2(vec)
+            cache[category] = vec
+
+        _category_vectors_cache = cache
+
+    return _category_vectors_cache
+
 
 def semantic_router(query: str):
     query_vec = embed_text(query)
+    category_vectors = get_category_vectors()
 
     best_category = None
     best_score = -1.0
 
-    for category, cat_vec in CATEGORY_VECTORS.items():
+    for category, cat_vec in category_vectors.items():
         score = float((query_vec @ cat_vec.T).item())
         if score > best_score:
             best_score = score
@@ -80,8 +106,9 @@ def semantic_router(query: str):
 
     return best_category, best_score
 
-# Main classification function
+# Main classifier
 def classify_query(query: str):
+
     # Rule-based first
     category, confidence = rule_based_router(query)
     if category:
