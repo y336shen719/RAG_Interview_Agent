@@ -13,7 +13,7 @@ EMBED_MODEL = "text-embedding-3-small"
 GEN_MODEL = "gpt-4o-mini"
 
 TOP_K = 3
-THRESHOLD = 0.5
+THRESHOLD = 0.4
 CANDIDATE_K = 10
 MAX_CONTEXT_CHARS = 6000
 
