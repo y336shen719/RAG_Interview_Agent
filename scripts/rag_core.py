@@ -3,7 +3,7 @@ import json
 import numpy as np
 import faiss
 from openai import OpenAI
-from query_classifier import classify_query
+from scripts.query_classifier import classify_query
 
 # Configuration
 CHUNK_FILE = "vector_store/chunks.json"
