@@ -6,6 +6,14 @@ pipeline designed to answer questions about:
 -   My machine learning projects
 -   Resume and background
 
+## The deployed demo is available at:
+
+## https://ryan-shen-rag-based-interview-assistant.streamlit.app/
+
+For security and controlled access, the application is password-protected.
+
+If you are interested in trying the system, please feel free to contact me directly to request access credentials.
+
 ------------------------------------------------------------------------
 
 ## System Architecture Overview
@@ -148,13 +156,3 @@ answers.
 This project demonstrates a production-oriented, retrieval-augmented interview assistant built on a structured personal knowledge base.
 
 The end-to-end classic RAG pipeline is able to deliver concise, context-grounded answers to interview-style questions in real time.
-
-The deployed demo is available at:
-
-Live Demo:
-
-https://ryan-shen-rag-based-interview-assistant.streamlit.app/
-
-For security and controlled access, the application is password-protected.
-
-If you are interested in trying the system, please feel free to contact me directly to request access credentials.
