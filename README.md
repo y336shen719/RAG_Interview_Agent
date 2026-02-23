@@ -22,32 +22,24 @@ Generation | v Final Answer
 ### The entire RAG pipeline looks like:
 User Query
    |
-   v
 [Password Gate (Streamlit)]
    |
-   v
 rag_core.answer_query(query)
    |
-   v
 query_classifier.classify_query(query)
    |-- (Rule-based router: keyword match)
    |-- else (Semantic router: embeddings)
    |
-   v
 FAISS retrieval (index.search)
    |
-   v
 Retrieval Strategy (Two-stage)
    |-- Stage 1: metadata filter + threshold + top_k
    |-- if empty -> Stage 2: global fallback
    |
-   v
 Context Builder
    |
-   v
 LLM Answer Generation
    |
-   v
 Final Answer
 
 ------------------------------------------------------------------------
