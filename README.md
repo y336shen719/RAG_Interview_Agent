@@ -10,11 +10,11 @@ pipeline designed to answer questions about:
 
 ### https://ryan-shen-rag-based-interview-assistant.streamlit.app/
 
-[!WARNING]
-For security and controlled access, the application is **password-protected**.
+> [!WARNING]
+> For security and controlled access, the application is **password-protected**.
 
-[!WARNING]
-If you are interested in trying the system, please feel free to contact me directly to **request access credentials**.
+> [!IMPORTANT]
+> If you are interested in trying the system, please feel free to contact me directly to **request access credentials**.
 
 ------------------------------------------------------------------------
 
