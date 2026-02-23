@@ -3,11 +3,15 @@ import json
 import numpy as np
 import faiss
 from openai import OpenAI
+from pathlib import Path
 from scripts.query_classifier import classify_query
 
 # Configuration
-CHUNK_FILE = "vector_store/chunks.json"
-INDEX_FILE = "vector_store/faiss.index"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+VECTOR_STORE_DIR = PROJECT_ROOT / "vector_store"
+
+CHUNK_FILE = VECTOR_STORE_DIR / "chunks.json"
+INDEX_FILE = VECTOR_STORE_DIR / "faiss.index"
 
 EMBED_MODEL = "text-embedding-3-small"
 GEN_MODEL = "gpt-4o-mini"
@@ -19,18 +23,23 @@ ROUTING_CONF_THRESHOLD = 0.7
 MAX_CONTEXT_CHARS = 6000
 
 # OpenAI Client
+_client = None
+
 def get_client():
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise ValueError("OPENAI_API_KEY not set.")
-    return OpenAI(api_key=api_key)
+    global _client
+    if _client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY not set.")
+        _client = OpenAI(api_key=api_key)
+    return _client
 
 # Load Vector Store
 def load_vector_store():
     with open(CHUNK_FILE, "r", encoding="utf-8") as f:
         chunks = json.load(f)
 
-    index = faiss.read_index(INDEX_FILE)
+    index = faiss.read_index(str(INDEX_FILE))
     return chunks, index
 
 # Embed Query
