@@ -44,16 +44,6 @@ pipeline designed to answer questions about:
 
 6. Answer Generation by LLM
 
-7. Others
-
--  Knowledge Base Construction
-
--  Metadata Design
-
--  Chunking Strategy
-
--  Embedding
-
 ------------------------------------------------------------------------
 
 ### 1) Knowledge Base Organization
