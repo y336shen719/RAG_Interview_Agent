@@ -9,7 +9,7 @@ st.set_page_config(
 )
 
 # Header
-st.title("RAG-BASED Interview & Project Assistant")
+st.title("RAG Interview & Project Assistant")
 
 st.markdown(
     """
