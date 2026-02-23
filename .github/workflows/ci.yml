@@ -10,11 +10,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python (with pip cache)
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
@@ -39,5 +37,4 @@ jobs:
           fi
 
       - name: Dry run chunk builder
-        run: |
-          python scripts/build_chunks.py
+        run: python -m scripts.build_chunks
