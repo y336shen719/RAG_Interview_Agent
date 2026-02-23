@@ -13,11 +13,12 @@ EMBED_MODEL = "text-embedding-3-small"
 GEN_MODEL = "gpt-4o-mini"
 
 TOP_K = 3
-THRESHOLD = 0.25
 CANDIDATE_K = 10
+THRESHOLD = 0.25
+ROUTING_CONF_THRESHOLD = 0.7
 MAX_CONTEXT_CHARS = 6000
 
-# OpenAI Client (Lazy)
+# OpenAI Client
 def get_client():
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -30,7 +31,6 @@ def load_vector_store():
         chunks = json.load(f)
 
     index = faiss.read_index(INDEX_FILE)
-
     return chunks, index
 
 # Embed Query
@@ -42,10 +42,9 @@ def embed_query(query: str, client):
 
     vec = np.array(resp.data[0].embedding, dtype="float32").reshape(1, -1)
     faiss.normalize_L2(vec)
-
     return vec
 
-# Retrieval (Two-Stage Strategy)
+# Retrieval
 def retrieve(query: str, client, index, chunks):
 
     category, confidence, method = classify_query(query)
@@ -57,7 +56,6 @@ def retrieve(query: str, client, index, chunks):
     qvec = embed_query(query, client)
     scores, indices = index.search(qvec, CANDIDATE_K)
 
-    # Metadata-filtered search
     results = []
 
     for score, idx in zip(scores[0], indices[0]):
@@ -65,16 +63,20 @@ def retrieve(query: str, client, index, chunks):
         if idx == -1:
             continue
 
+        if float(score) < THRESHOLD:
+            continue
+
         chunk = chunks[idx]
         meta = chunk.get("metadata", {})
         src_type = meta.get("source_type")
 
-        # metadata routing
-        if category and src_type != category:
-            continue
-
-        # threshold filtering
-        if float(score) < THRESHOLD:
+        # Apply metadata routing only if high confidence
+        if (
+            confidence is not None
+            and confidence >= ROUTING_CONF_THRESHOLD
+            and category
+            and src_type != category
+        ):
             continue
 
         results.append({
@@ -84,36 +86,10 @@ def retrieve(query: str, client, index, chunks):
             "content": chunk.get("content", "")
         })
 
-        if len(results) >= TOP_K:
-            break
+    # Sort explicitly by score (descending)
+    results = sorted(results, key=lambda x: x["score"], reverse=True)
 
-    # Global fallback search
-    if not results:
-
-        print("⚠ Metadata filtering returned empty. Running global fallback search.")
-
-        for score, idx in zip(scores[0], indices[0]):
-
-            if idx == -1:
-                continue
-
-            if float(score) < THRESHOLD:
-                continue
-
-            chunk = chunks[idx]
-            meta = chunk.get("metadata", {})
-
-            results.append({
-                "score": float(score),
-                "chunk_id": int(idx),
-                "metadata": meta,
-                "content": chunk.get("content", "")
-            })
-
-            if len(results) >= TOP_K:
-                break
-
-    return results
+    return results[:TOP_K]
 
 # Build Context
 def build_context(results):
@@ -129,13 +105,12 @@ def build_context(results):
         tag = meta.get("section") or meta.get("question") or "unknown"
 
         header = (
-            f"[{i}] source_type={src_type} | "
-            f"file={file_name} | tag={tag} | "
-            f"score={r['score']:.4f}"
+            f"[{i}] Source: {src_type} | "
+            f"File: {file_name} | "
+            f"Tag: {tag}"
         )
 
         body = r["content"].strip()
-
         block = header + "\n" + body
 
         if total_chars + len(block) > MAX_CONTEXT_CHARS:
@@ -150,23 +125,24 @@ def build_context(results):
 def generate_answer(query: str, context: str, client):
 
     system_prompt = (
-    "You are answering as the job candidate in a professional interview. "
-    "Always respond in first-person (e.g., 'I have worked on...', 'In my project...'). "
-    "Answer strictly and only based on the provided context. "
-    "Do NOT use any external knowledge or fabricate information. "
-    "If the relevant information is not found in the context, "
-    "respond in first-person by explaining that this is an area I am actively looking to develop "
-    "and describe how I plan to strengthen this knowledge or skill in the future. "
-    "Maintain a confident, structured, and professional tone."
-    "Do not mention the word "context" or "knowledge base".
-)
+        "You are responding as the job candidate in a professional interview. "
+        "Always answer in natural first-person language. "
+        "Use only the information provided below. "
+        "Do not fabricate details or use outside knowledge. "
+        "If the information needed to answer the question is not available, "
+        "do not mention missing context. "
+        "Instead, explain honestly that this is an area I am currently developing "
+        "and describe concrete steps I am taking or plan to take to strengthen this skill. "
+        "Maintain clarity, confidence, and a structured professional tone. "
+        "Do not mention the word 'context' or 'knowledge base'."
+    )
 
     user_prompt = f"""
 Question:
 {query}
 
-Context:
-{context}
+Information:
+{context if context else "No relevant project or experience information found."}
 
 Provide a structured and professional answer.
 """
@@ -190,9 +166,6 @@ def answer_query(query: str):
 
     retrieved = retrieve(query, client, index, chunks)
 
-    if not retrieved:
-        return "I do not have enough information in the current knowledge base to answer this question."
-
-    context = build_context(retrieved)
+    context = build_context(retrieved) if retrieved else ""
 
     return generate_answer(query, context, client)
