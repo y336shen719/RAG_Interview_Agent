@@ -40,7 +40,7 @@ pipeline designed to answer questions about:
 
 -   Fallback Global Search (if empty)
 
-5. Context Builder （prompt engineering)
+5. Context Builder (context engineering)
 
 6. Answer Generation by LLM
 
